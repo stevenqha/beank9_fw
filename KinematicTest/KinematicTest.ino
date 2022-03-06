@@ -1,8 +1,8 @@
 #include <Servo.h>
 
-int initStart;
-int state;
-float rate;
+int initStart = 0;
+int state = 0;
+float rate = 10;
 
 int targetLeg1x;
 int targetLeg1z;
@@ -482,18 +482,21 @@ void reset_servos() {
     bl_knee.writeMicroseconds(1500);
 }
 
-#define RESET 1
+#define RESET 0
 #define Z_TEST 0
 #define X_TEST 0
 #define Y_TEST 0
-#define STABLE_WALK 0
+#define STABLE_WALK 1
 
-int desired_z = 200; // 90 degree between joints
+int desired_z = 215; // 90 degree between joints
 int desired_x = 0;
 int desired_y = 0;
 int desired_pitch = 0;
 int desired_roll = 0;
 int desired_yaw = 0;
+
+unsigned long currentMillis;
+unsigned long previousMillis;
 
 void setup() {
     fr_hip.attach(FR_HIP_PIN, MIN_SIG, MAX_SIG);
@@ -546,10 +549,11 @@ void setup() {
 void loop() {
     numBytes = Serial.available();
     if(readline(Serial.read(), buffer, BUF_LENGTH) > 0) {
+        #if !STABLE_WALK
 //        desired_z = atoi(buffer);
 //        Serial.println(desired_z);
-//        desired_x = atoi(buffer);
-//        Serial.println(desired_x);
+        desired_x = atoi(buffer);
+        Serial.println(desired_x);
 //        desired_y = atoi(buffer);
 //        Serial.println(desired_y);
 //        desired_roll = atoi(buffer);
@@ -558,11 +562,15 @@ void loop() {
 //        Serial.println(desired_pitch);
 //        desired_yaw = atoi(buffer);
 //        Serial.println(desired_yaw);
-        
         kinematic(LEG_FR, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
         kinematic(LEG_FL, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
         kinematic(LEG_BR, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
         kinematic(LEG_BL, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
+
+        #else
+        rate = atoi(buffer);
+        Serial.println(rate);
+        #endif // STABLE_WALK
     }
 
 #if Z_TEST // Z-TEST
@@ -629,6 +637,393 @@ void loop() {
         kinematic(LEG_BL, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
         delay(45);    
     }
+#elif STABLE_WALK
+    currentMillis = millis();
+    if (currentMillis - previousMillis >= 10) {  // start timed event
+          
+        previousMillis = currentMillis;
+
+
+        // define walking positions
+        
+        walkXPos1 = -60;
+        walkXPos2 = 40;
+        walkXPos3 = 60; 
+        walkXPos4 = 40; 
+        walkXPos5 = 20;
+        walkXPos6 = 0; 
+        walkXPos7 = -20; 
+        walkXPos8 = -40;
+        
+        walkZPos1 = 215;    // leg down
+        walkZPos2 = 150;    // leg up
+        walkZPos3 = 215;    // leg down
+        walkZPos4 = 215;    // leg down
+        walkZPos5 = 215;    // leg down
+        walkZPos6 = 215;    // leg down
+        walkZPos7 = 215;    // leg down
+        walkZPos8 = 215;    // leg down
+        
+        walkYPos1 = 0; //-25;
+        walkYPos2 = 0; //-25;
+        walkYPos3 = 0; //-25; 
+        walkYPos4 = 0; //-25;
+        walkYPos5 = 0; //25;
+        walkYPos6 = 0; //25;
+        walkYPos7 = 0; //25;
+        walkYPos8 = 0; //25;
+        
+        if (initStart == 0) {
+            currentLeg1x = walkXPos3;                        
+            currentLeg1z = walkZPos3;                        // leg1 down
+        
+            currentLeg2x = walkXPos7;                        
+            currentLeg2z = walkZPos7;                        // leg2 down
+        
+            currentLeg3x = walkXPos5;                        
+            currentLeg3z = walkZPos5;                        // leg2 down
+        
+            currentLeg4x = walkXPos1;                        
+            currentLeg4z = walkZPos1;                        // leg2 down
+        
+            currentLeg1y = walkYPos1;                        // lean
+        
+            initStart = 1;
+        }
+        
+        // if (toggle1 == 1) {           // start state machine for walking                   
+        
+            if (state == 0) {
+                targetLeg1x = walkXPos3;
+                targetLeg1z = walkZPos3;
+                targetLeg2x = walkXPos7;
+                targetLeg2z = walkZPos7;
+                targetLeg3x = walkXPos5;
+                targetLeg3z = walkZPos5;
+                targetLeg4x = walkXPos1;
+                targetLeg4z = walkZPos1;
+                targetLeg1y = walkYPos1;                      
+                if (currentLeg1x >= targetLeg1x) {
+                    state = 1;
+                    prevLeg1x = targetLeg1x;
+                    prevLeg1z = targetLeg1z;
+                    prevLeg2x = targetLeg2x;
+                    prevLeg2z = targetLeg2z;
+                    prevLeg3x = targetLeg3x;
+                    prevLeg3z = targetLeg3z;
+                    prevLeg4x = targetLeg4x;
+                    prevLeg4z = targetLeg4z;
+                    prevLeg1y = targetLeg1y;
+                    // check we actually get there due to dividing errors
+                    currentLeg1x = targetLeg1x;
+                    currentLeg1z = targetLeg1z;
+                    currentLeg2x = targetLeg2x;
+                    currentLeg2z = targetLeg2z;
+                    currentLeg3x = targetLeg3x;
+                    currentLeg3z = targetLeg3z;
+                    currentLeg4x = targetLeg4x;
+                    currentLeg4z = targetLeg4z;
+                    currentLeg1y = targetLeg1y;
+                }
+            }
+        
+            else if (state == 1) {
+                targetLeg1x = walkXPos4;
+                targetLeg1z = walkZPos4;
+                targetLeg2x = walkXPos8;
+                targetLeg2z = walkZPos8;
+                targetLeg3x = walkXPos6;
+                targetLeg3z = walkZPos6;
+                targetLeg4x = walkXPos2;
+                targetLeg4z = walkZPos2;
+                targetLeg1y = walkYPos2; 
+                if (currentLeg1x <= targetLeg1x) {
+                    state = 2;
+                    prevLeg1x = targetLeg1x;
+                    prevLeg1z = targetLeg1z;
+                    prevLeg2x = targetLeg2x;
+                    prevLeg2z = targetLeg2z;
+                    prevLeg3x = targetLeg3x;
+                    prevLeg3z = targetLeg3z;
+                    prevLeg4x = targetLeg4x;
+                    prevLeg4z = targetLeg4z;
+                    prevLeg1y = targetLeg1y;
+                    // check we actually get there due to dividing errors
+                    currentLeg1x = targetLeg1x;
+                    currentLeg1z = targetLeg1z;
+                    currentLeg2x = targetLeg2x;
+                    currentLeg2z = targetLeg2z;
+                    currentLeg3x = targetLeg3x;
+                    currentLeg3z = targetLeg3z;
+                    currentLeg4x = targetLeg4x;
+                    currentLeg4z = targetLeg4z;
+                    currentLeg1y = targetLeg1y;
+                }
+            }
+        
+            else if (state == 2) {
+                targetLeg1x = walkXPos5;
+                targetLeg1z = walkZPos5;
+                targetLeg2x = walkXPos1;
+                targetLeg2z = walkZPos1;
+                targetLeg3x = walkXPos7;
+                targetLeg3z = walkZPos7;
+                targetLeg4x = walkXPos3;
+                targetLeg4z = walkZPos3;
+                targetLeg1y = walkYPos3; 
+                if (currentLeg1x <= targetLeg1x) {
+                    state = 3;
+                    prevLeg1x = targetLeg1x;
+                    prevLeg1z = targetLeg1z;
+                    prevLeg2x = targetLeg2x;
+                    prevLeg2z = targetLeg2z;
+                    prevLeg3x = targetLeg3x;
+                    prevLeg3z = targetLeg3z;
+                    prevLeg4x = targetLeg4x;
+                    prevLeg4z = targetLeg4z;
+                    prevLeg1y = targetLeg1y;
+                    // check we actually get there due to dividing errors
+                    currentLeg1x = targetLeg1x;
+                    currentLeg1z = targetLeg1z;
+                    currentLeg2x = targetLeg2x;
+                    currentLeg2z = targetLeg2z;
+                    currentLeg3x = targetLeg3x;
+                    currentLeg3z = targetLeg3z;
+                    currentLeg4x = targetLeg4x;
+                    currentLeg4z = targetLeg4z;
+                    currentLeg1y = targetLeg1y;
+                }
+            }
+        
+            else if (state == 3) {
+                targetLeg1x = walkXPos6;
+                targetLeg1z = walkZPos6;
+                targetLeg2x = walkXPos2;
+                targetLeg2z = walkZPos2;
+                targetLeg3x = walkXPos8;
+                targetLeg3z = walkZPos8;
+                targetLeg4x = walkXPos4;
+                targetLeg4z = walkZPos4;
+                targetLeg1y = walkYPos4; 
+                if (currentLeg1x <= targetLeg1x) {
+                    state = 4;
+                    prevLeg1x = targetLeg1x;
+                    prevLeg1z = targetLeg1z;
+                    prevLeg2x = targetLeg2x;
+                    prevLeg2z = targetLeg2z;
+                    prevLeg3x = targetLeg3x;
+                    prevLeg3z = targetLeg3z;
+                    prevLeg4x = targetLeg4x;
+                    prevLeg4z = targetLeg4z;
+                    prevLeg1y = targetLeg1y;
+                    // check we actually get there due to dividing errors
+                    currentLeg1x = targetLeg1x;
+                    currentLeg1z = targetLeg1z;
+                    currentLeg2x = targetLeg2x;
+                    currentLeg2z = targetLeg2z;
+                    currentLeg3x = targetLeg3x;
+                    currentLeg3z = targetLeg3z;
+                    currentLeg4x = targetLeg4x;
+                    currentLeg4z = targetLeg4z;
+                    currentLeg1y = targetLeg1y;
+                }
+            }
+        
+            else if (state == 4) {
+                targetLeg1x = walkXPos7;
+                targetLeg1z = walkZPos7;
+                targetLeg2x = walkXPos3;
+                targetLeg2z = walkZPos3;
+                targetLeg3x = walkXPos1;
+                targetLeg3z = walkZPos1;
+                targetLeg4x = walkXPos5;
+                targetLeg4z = walkZPos5;
+                targetLeg1y = walkYPos5; 
+                if (currentLeg1x <= targetLeg1x) {
+                    state = 5;
+                    prevLeg1x = targetLeg1x;
+                    prevLeg1z = targetLeg1z;
+                    prevLeg2x = targetLeg2x;
+                    prevLeg2z = targetLeg2z;
+                    prevLeg3x = targetLeg3x;
+                    prevLeg3z = targetLeg3z;
+                    prevLeg4x = targetLeg4x;
+                    prevLeg4z = targetLeg4z;
+                    prevLeg1y = targetLeg1y;
+                    // check we actually get there due to dividing errors
+                    currentLeg1x = targetLeg1x;
+                    currentLeg1z = targetLeg1z;
+                    currentLeg2x = targetLeg2x;
+                    currentLeg2z = targetLeg2z;
+                    currentLeg3x = targetLeg3x;
+                    currentLeg3z = targetLeg3z;
+                    currentLeg4x = targetLeg4x;
+                    currentLeg4z = targetLeg4z;
+                    currentLeg1y = targetLeg1y;
+                }
+            }
+        
+            else if (state == 5) {
+                targetLeg1x = walkXPos8;
+                targetLeg1z = walkZPos8;
+                targetLeg2x = walkXPos4;
+                targetLeg2z = walkZPos4;
+                targetLeg3x = walkXPos2;
+                targetLeg3z = walkZPos2;
+                targetLeg4x = walkXPos6;
+                targetLeg4z = walkZPos6;
+                targetLeg1y = walkYPos6; 
+                if (currentLeg1x <= targetLeg1x) {
+                    state = 6;
+                    prevLeg1x = targetLeg1x;
+                    prevLeg1z = targetLeg1z;
+                    prevLeg2x = targetLeg2x;
+                    prevLeg2z = targetLeg2z;
+                    prevLeg3x = targetLeg3x;
+                    prevLeg3z = targetLeg3z;
+                    prevLeg4x = targetLeg4x;
+                    prevLeg4z = targetLeg4z;
+                    prevLeg1y = targetLeg1y;
+                    // check we actually get there due to dividing errors
+                    currentLeg1x = targetLeg1x;
+                    currentLeg1z = targetLeg1z;
+                    currentLeg2x = targetLeg2x;
+                    currentLeg2z = targetLeg2z;
+                    currentLeg3x = targetLeg3x;
+                    currentLeg3z = targetLeg3z;
+                    currentLeg4x = targetLeg4x;
+                    currentLeg4z = targetLeg4z;
+                    currentLeg1y = targetLeg1y;
+                }
+            }
+        
+            else if (state == 6) {
+                targetLeg1x = walkXPos1;
+                targetLeg1z = walkZPos1;
+                targetLeg2x = walkXPos5;
+                targetLeg2z = walkZPos5;
+                targetLeg3x = walkXPos3;
+                targetLeg3z = walkZPos3;
+                targetLeg4x = walkXPos7;
+                targetLeg4z = walkZPos7;
+                targetLeg1y = walkYPos7; 
+                if (currentLeg1x <= targetLeg1x) {
+                    state = 7;
+                    prevLeg1x = targetLeg1x;
+                    prevLeg1z = targetLeg1z;
+                    prevLeg2x = targetLeg2x;
+                    prevLeg2z = targetLeg2z;
+                    prevLeg3x = targetLeg3x;
+                    prevLeg3z = targetLeg3z;
+                    prevLeg4x = targetLeg4x;
+                    prevLeg4z = targetLeg4z;
+                    prevLeg1y = targetLeg1y;
+                    // check we actually get there due to dividing errors
+                    currentLeg1x = targetLeg1x;
+                    currentLeg1z = targetLeg1z;
+                    currentLeg2x = targetLeg2x;
+                    currentLeg2z = targetLeg2z;
+                    currentLeg3x = targetLeg3x;
+                    currentLeg3z = targetLeg3z;
+                    currentLeg4x = targetLeg4x;
+                    currentLeg4z = targetLeg4z;
+                    currentLeg1y = targetLeg1y;
+                }
+            }
+        
+            else if (state == 7) {
+                targetLeg1x = walkXPos2;
+                targetLeg1z = walkZPos2;
+                targetLeg2x = walkXPos6;
+                targetLeg2z = walkZPos6;
+                targetLeg3x = walkXPos4;
+                targetLeg3z = walkZPos4;
+                targetLeg4x = walkXPos8;
+                targetLeg4z = walkZPos8;
+                targetLeg1y = walkYPos8; 
+                if (currentLeg1x >= targetLeg1x) {
+                    state = 0;
+                    prevLeg1x = targetLeg1x;
+                    prevLeg1z = targetLeg1z;
+                    prevLeg2x = targetLeg2x;
+                    prevLeg2z = targetLeg2z;
+                    prevLeg3x = targetLeg3x;
+                    prevLeg3z = targetLeg3z;
+                    prevLeg4x = targetLeg4x;
+                    prevLeg4z = targetLeg4z;
+                    prevLeg1y = targetLeg1y;
+                    // check we actually get there due to dividing errors
+                    currentLeg1x = targetLeg1x;
+                    currentLeg1z = targetLeg1z;
+                    currentLeg2x = targetLeg2x;
+                    currentLeg2z = targetLeg2z;
+                    currentLeg3x = targetLeg3x;
+                    currentLeg3z = targetLeg3z;
+                    currentLeg4x = targetLeg4x;
+                    currentLeg4z = targetLeg4z;
+                    currentLeg1y = targetLeg1y;
+                }
+            }
+        
+            stepDiffLeg1x = (targetLeg1x - prevLeg1x)/(5*rate);
+            stepDiffLeg1z = (targetLeg1z - prevLeg1z)/(5*rate);
+            currentLeg1x = currentLeg1x + stepDiffLeg1x;
+            currentLeg1z = currentLeg1z + stepDiffLeg1z;
+        
+            stepDiffLeg2x = (targetLeg2x - prevLeg2x)/(5*rate);
+            stepDiffLeg2z = (targetLeg2z - prevLeg2z)/(5*rate);
+            currentLeg2x = currentLeg2x + stepDiffLeg2x;
+            currentLeg2z = currentLeg2z + stepDiffLeg2z;
+        
+            stepDiffLeg3x = (targetLeg3x - prevLeg3x)/(5*rate);
+            stepDiffLeg3z = (targetLeg3z - prevLeg3z)/(5*rate);
+            currentLeg3x = currentLeg3x + stepDiffLeg3x;
+            currentLeg3z = currentLeg3z + stepDiffLeg3z;
+        
+            stepDiffLeg4x = (targetLeg4x - prevLeg4x)/(5*rate);
+            stepDiffLeg4z = (targetLeg4z - prevLeg4z)/(5*rate);
+            currentLeg4x = currentLeg4x + stepDiffLeg4x;
+            currentLeg4z = currentLeg4z + stepDiffLeg4z;
+        
+            stepDiffLeg1y = (targetLeg1y - prevLeg1y)/(5*rate);
+            currentLeg1y = currentLeg1y + stepDiffLeg1y;
+        
+        // }   // end of state machine for walk test
+        
+        // offsets to balance centre of gravity statically
+        
+        // x = map(RFB, -460,460,-20,20);   // front/back                  | Higher number moves the foot forward
+        // x = constrain(x,-20,0);
+        
+         int offsetX = 0; //(offsetX - 25) - x;
+         int offsetY = 0; // offsetY + 25;
+        
+        // Serial.print(pitch);
+        // Serial.print(" , ");
+        // Serial.print(roll);
+        // Serial.print(" , ");
+        // Serial.print(x);
+        // Serial.print(" , ");
+        // Serial.print(rate);
+        // Serial.print(" , ");
+        // Serial.print(targetLeg2x);
+        // Serial.print(" , ");
+        // Serial.print(currentLeg2x);
+        // Serial.print(" , ");
+        // Serial.print(targetLeg2z);
+        // Serial.print(" , ");
+        // Serial.print(currentLeg2z);
+        
+        // Serial.println(); 
+        
+        // p = 1.5;    // bodge to keep the nose up
+        
+        kinematic(LEG_FR, currentLeg1x+offsetX, currentLeg1y-offsetY, currentLeg1z, desired_roll, desired_pitch, desired_yaw);
+        kinematic(LEG_FL, currentLeg2x+offsetX, currentLeg1y+offsetY, currentLeg2z, desired_roll, desired_pitch, desired_yaw);
+//        kinematic(LEG_BR, currentLeg2x+offsetX, currentLeg1y+offsetY, currentLeg2z, desired_roll, desired_pitch, desired_yaw);
+        kinematic(LEG_BR, currentLeg3x+offsetX, currentLeg1y-offsetY, currentLeg3z, desired_roll, desired_pitch, desired_yaw);
+        kinematic(LEG_BL, currentLeg4x+offsetX, currentLeg1y+offsetY, currentLeg4z, desired_roll, desired_pitch, desired_yaw);
+    } // timed event
 #endif
     
 }
