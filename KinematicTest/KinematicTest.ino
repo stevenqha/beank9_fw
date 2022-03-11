@@ -92,9 +92,9 @@ Servo bl_knee;
 
 #define FR_HIP_PIN 22
 #define FR_SHOULDER_PIN 23
-#define FR_KNEE_PIN 0
+#define FR_KNEE_PIN 1
 
-#define FL_HIP_PIN 9
+#define FL_HIP_PIN 0
 #define FL_SHOULDER_PIN 8
 #define FL_KNEE_PIN 7
 
@@ -644,7 +644,8 @@ void loop() {
         #else
         if (buffer[0] == 'x' || buffer[0] == 'y' || buffer[0] == 'z' || 
             buffer[0] == 'r' || buffer[0] == 'p' || buffer[0] == 'h' ||
-            buffer[0] == 'w' || buffer[0] == 's' || buffer[0] == ' ') {
+            buffer[0] == 'w' || buffer[0] == 's' || buffer[0] == ' ' ||
+            buffer[0] == 'c') {
             test_mode = buffer[0];
 
             char c = buffer[0];
@@ -877,14 +878,14 @@ void loop() {
             if (incr) {
                 desired_pitch+= 0.15;
 
-                if (desired_pitch >= 10) {
+                if (desired_pitch >= 8) {
                     incr = false;    
                 }
             }
             else {
                 desired_pitch-=0.15;
 
-                if (desired_pitch <= -10) {
+                if (desired_pitch <= -8) {
                     incr = true;    
                 }
             }
@@ -1307,6 +1308,9 @@ void loop() {
         }
         else if (test_mode == ' ') {
             rest_position();
+        }
+        else if (test_mode == 'c') {
+            reset_servos();   
         }
         else {
             kinematic(LEG_FR, desired_x, -DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
