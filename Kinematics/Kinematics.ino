@@ -89,6 +89,9 @@ Servo bl_hip;
 Servo bl_shoulder;
 Servo bl_knee;
 
+Servo gimble_yaw;
+Servo gim_pitch_servo;
+
 
 #define FR_HIP_PIN 22
 #define FR_SHOULDER_PIN 23
@@ -106,8 +109,13 @@ Servo bl_knee;
 #define BL_SHOULDER_PIN 11
 #define BL_KNEE_PIN 12
 
+#define GIMBLE_YAW_PIN 3
+#define gim_pitch_servo_PIN 2
+
 #define MIN_SIG 500
 #define MAX_SIG 2500
+#define GIM_PIT_MIN 635
+#define GIM_PIT_MAX 2460
 
 #define BUF_LENGTH 10
 
@@ -145,12 +153,12 @@ void kinematic(leg_e leg, float x, float y, float z, float roll, float pitch, fl
 
     // put in offsets from robot's parameters so we can work out the radius of the foot from the robot's centre
     if (leg == LEG_FL) {         // front left leg
-       y = y - (BODY_WIDTH+HIP_OFFSET_FR); 
-       x = x - BODY_LENGTH;      
+       y = y - (BODY_WIDTH+HIP_OFFSET_FR);
+       x = x - BODY_LENGTH;
     }
     else if (leg == LEG_FR) {    // front right leg
        y = y + (BODY_WIDTH+HIP_OFFSET_FR);
-       x = x - BODY_LENGTH; 
+       x = x - BODY_LENGTH;
     }
     else if (leg == LEG_BL) {    // back left leg
        y = y - (BODY_WIDTH+HIP_OFFSET_FR); 
@@ -162,7 +170,7 @@ void kinematic(leg_e leg, float x, float y, float z, float roll, float pitch, fl
     }
 
     //calc existing angle of leg from cetre
-    float existingAngle = atan(y/x);   
+    float existingAngle = atan(y/x);
 
     // calc radius from centre
     float radius = y/sin(existingAngle);
@@ -176,109 +184,109 @@ void kinematic(leg_e leg, float x, float y, float z, float roll, float pitch, fl
 
     // remove the offsets so we pivot around 0/0 x/y
     if (leg == LEG_FL) {         // front left leg
-       y = y + (BODY_WIDTH+HIP_OFFSET_FR); 
-       x = x + BODY_LENGTH;      
+       y = y + (BODY_WIDTH+HIP_OFFSET_FR);
+       x = x + BODY_LENGTH;
     }
     else if (leg == LEG_FR) {    // front right leg
        y = y - (BODY_WIDTH+HIP_OFFSET_FR);
-       x = x + BODY_LENGTH; 
+       x = x + BODY_LENGTH;
     }
     else if (leg == LEG_BL) {    // back left leg
-       y = y + (BODY_WIDTH+HIP_OFFSET_FR); 
+       y = y + (BODY_WIDTH+HIP_OFFSET_FR);
        x = x - BODY_LENGTH;
     }
     else if (leg == LEG_BR) {    // back right leg
-       y = y - (BODY_WIDTH+HIP_OFFSET_FR); 
+       y = y - (BODY_WIDTH+HIP_OFFSET_FR);
        x = x - BODY_LENGTH;
     }
 
+    // ----------------------------------------------------------------------------------------------------------
     // *** PITCH AXIS ***
-
-    //turn around the pitch for front or back of the robot
-    if (leg == LEG_FR || leg == LEG_FL) {
-      pitch = 0-pitch;      
+    // Positive pitch is front of robot tilting counter clockwise
+    pitch = (PI/180) * pitch;   // convert pitch to radians
+    
+    if (leg == LEG_BR || leg == LEG_BL) {
+        x *= -1;      // switch over x for each end of the robot
+        pitch *= -1;  // invert pitch for the end of the robot
     }
-    else if (leg == LEG_BR || leg == LEG_BL) {
-      x = x*-1;       // switch over x for each end of the robot
-    }
-
-    // convert pitch to degrees
-    pitch = (PI/180) * pitch;
-
+    
     //calc top triangle sides
     float legDiffPitch = sin(pitch) * BODY_LENGTH;
     float bodyDiffPitch = cos(pitch) * BODY_LENGTH;
 
     // calc actual height from the ground for each side
-    legDiffPitch = z - legDiffPitch;
+    legDiffPitch = z + legDiffPitch;
 
     // calc foot displacement
-    float footDisplacementPitch = ((bodyDiffPitch - BODY_LENGTH)*-1)+x;
+    float footDisplacementPitch = (BODY_LENGTH - bodyDiffPitch) - x;
 
     //calc smaller displacement angle
-    float footDisplacementAnglePitch = atan(footDisplacementPitch/legDiffPitch);
+    float footDisplacementAnglePitch = atan2(footDisplacementPitch, legDiffPitch);
 
-    //calc distance from the ground at the displacement angle (the hypotenuse of the final triangle)
-    float zz2a = legDiffPitch/cos(footDisplacementAnglePitch);
+    // calc distance from the ground at the displacement angle (the hypotenuse of the final triangle)
+    float leg_length = legDiffPitch/cos(footDisplacementAnglePitch);
 
     // calc the whole angle for the leg
-    float footWholeAnglePitch = footDisplacementAnglePitch + pitch;
+    float footWholeAnglePitch = footDisplacementAnglePitch - pitch;
 
     //calc actual leg length - the new Z to pass on
-    z = cos(footWholeAnglePitch) * zz2a;
+    z = cos(footWholeAnglePitch) * leg_length;
 
     //calc new Z to pass on
-    x = sin(footWholeAnglePitch) * zz2a;
+    x = sin(footWholeAnglePitch) * leg_length * -1;
 
-//    if (leg == LEG_BR || leg == LEG_BL ){     // switch back X for the back of the robot
-//      x = x *-1;
-//    }
+//    Serial.print("Pitch z: ");
+//    Serial.println(z);
+//    Serial.print("Pitch x: ");
+//    Serial.println(x);
+    // ---------------------------------------------------------------------------------------------------------
 
-    // *** ROLL AXIS ***
-
-    //turn around roll angle for each side of the robot
+    // *** NEW ROLL ***
+    // Positive is CCW from the front of the robot
+    
+    // Adjust y and roll depending on the leg
     if (leg == LEG_FL || leg == LEG_BL) {
-      y = y*-1;
+        y *= -1; // Moving the leg in negative y results in positive y for robot
     }
     else if (leg == LEG_FR || leg == LEG_BR) {
-      roll = 0-roll;
-    }   
+        roll *= -1; 
+    }
 
-    // convert roll angle to radians
-    float rollAngle = (PI/180) * roll;    //convert degrees from the stick to radians
+    roll = (PI/180) * roll;       // convert roll angle to radians
 
     // calc the top triangle sides
-    float legDiffRoll = sin(rollAngle) * BODY_WIDTH;
-    float bodyDiffRoll = cos(rollAngle) * BODY_WIDTH;
-    
+    float legDiffRoll = sin(roll) * BODY_WIDTH;
+    float bodyDiffRoll = cos(roll) * BODY_WIDTH;
+
     // calc actual height from the ground for each side
-    legDiffRoll = z - legDiffRoll;              
+    legDiffRoll = z + legDiffRoll;
 
     // calc foot displacement
-    float footDisplacementRoll = ((bodyDiffRoll - BODY_WIDTH)*-1)-y;
+    float footDisplacementRoll = (BODY_WIDTH - bodyDiffRoll) + HIP_OFFSET_FR + y;
 
     //calc smaller displacement angle
-    float footDisplacementAngleRoll = atan(footDisplacementRoll/legDiffRoll);  
+    float footDisplacementAngleRoll = atan2(footDisplacementRoll, legDiffRoll);
 
     //calc distance from the ground at the displacement angle (the hypotenuse of the final triangle)
     float zz1a = legDiffRoll/cos(footDisplacementAngleRoll);
 
     // calc the whole angle for the leg
-    float footWholeAngleRoll = footDisplacementAngleRoll + rollAngle;
+    float footWholeAngleRoll = footDisplacementAngleRoll - roll;
 
     //calc actual leg length - the new Z to pass on
     z = cos(footWholeAngleRoll) * zz1a;
 
     //calc new Y to pass on
-    y = sin(footWholeAngleRoll) * zz1a; 
+    y = sin(footWholeAngleRoll) * zz1a - HIP_OFFSET_FR;
+
+    Serial.print("Roll z: ");
+    Serial.println(z);
+    Serial.print("Roll y: ");
+    Serial.println(y);
 
     // *** TRANSLATION AXES ***
     // Y TRANSLATION (Side to side)
     // calculate the hip joint and new leg length based on how far the robot moves sideways
-    // first triangle
-//    float hipAngle1 = atan(y/z);    
-//    float hipAngle1Degrees = ((hipAngle1 * (180/PI)));   // convert to degrees and take off rest position
-//    z = z/cos(hipAngle1);
 
 //    if (leg == LEG_FR || leg == LEG_BR) {
 //        y *= -1;
@@ -533,26 +541,19 @@ void stand() {
     }
 }
 
-void stop_test() {
-    
-}
-
-void x_test() {
-    
-}
-
 #define RESET 0
 #define Z_TEST 0
 #define X_TEST 0
 #define Y_TEST 0
 #define STABLE_WALK 1
-
 int desired_z = DEFAULT_Z; // 90 degree between joints
 int desired_x = 0;
 int desired_y = 0;
 float desired_pitch = 0;
 float desired_roll = 0;
 float desired_yaw = 0;
+
+//int gimble_pitch = 2460;
 
 unsigned long currentMillis;
 unsigned long previousMillis;
@@ -579,6 +580,8 @@ void setup() {
     bl_hip.attach(BL_HIP_PIN, MIN_SIG, MAX_SIG);
     bl_shoulder.attach(BL_SHOULDER_PIN, MIN_SIG, MAX_SIG);
     bl_knee.attach(BL_KNEE_PIN, MIN_SIG, MAX_SIG);
+
+//    gim_pitch_servo.attach(gim_pitch_servo_PIN, GIM_PIT_MIN, GIM_PIT_MAX);
     
     Serial.begin(115200);
     while(!Serial) {}
@@ -588,12 +591,12 @@ void setup() {
     #else
     rest_position();
 
-    // Wait for command from Jetson to stand
-    while(!Serial.available());
-
-    while(Serial.available() > 0) {
-        char t = Serial.read();
-    }
+//    // Wait for command from Jetson to stand
+//    while(!Serial.available());
+//
+//    while(Serial.available() > 0) {
+//        char t = Serial.read();
+//    }
     
     stand();
 //    elapsedMicros time_e = 0;
@@ -628,18 +631,24 @@ void loop() {
 //        Serial.println(desired_z);
 //        desired_x = atoi(buffer);
 //        Serial.println(desired_x);
-//        desired_y = atoi(buffer);
-//        Serial.println(desired_y);
+        desired_y = atoi(buffer);
+        Serial.println(desired_y);
 //        desired_roll = atoi(buffer);
 //        Serial.println(desired_roll);
-        desired_pitch = atoi(buffer);
-        Serial.println(desired_pitch);
+//        desired_pitch = atoi(buffer);
+//        Serial.println(desired_pitch);
 //        desired_yaw = atoi(buffer);
 //        Serial.println(desired_yaw);
+
+//        gimble_pitch = atoi(buffer);
+//        Serial.println(gimble_pitch);
+
         kinematic(LEG_FR, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
         kinematic(LEG_FL, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
         kinematic(LEG_BR, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
         kinematic(LEG_BL, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
+
+//        gim_pitch_servo.writeMicroseconds(gimble_pitch);
 
         #else
         if (buffer[0] == 'x' || buffer[0] == 'y' || buffer[0] == 'z' || 
