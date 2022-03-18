@@ -98,7 +98,7 @@ leg_t leg_bl = {.leg = LEG_BL};
 //Servo &leg_bl.shoulder;
 //Servo &leg_bl.knee;
 
-Servo gimble_yaw;
+Servo gim_yaw_servo;
 Servo gim_pitch_servo;
 
 
@@ -197,8 +197,56 @@ void stand() {
     }
 }
 
+int gim_pitch_deg;
+
+void gim_rotate(bool clockwise, bool up) {
+    rampInt pitch_pos;
+    int pitch_sig = 0;
+    int target;
+    
+//    if(clockwise) {
+//        gim_yaw_servo.write(GIM_YAW_CW_SIG);
+//        delay(10);
+//    }
+//    else {
+//        gim_yaw_servo.write(GIM_YAW_CCW_SIG);
+//        delay(10);
+//    }
+
+    if(up) {
+//        pitch_pos.go(180);
+//        pitch_pos.go(135, 290, LINEAR, ONCEFORWARD);
+
+        target = 0;
+        pitch_pos.go(0);
+        pitch_pos.go(45, 290, LINEAR, ONCEFORWARD);
+    }
+    else {
+//        pitch_pos.go(135);
+//        pitch_pos.go(180, 290, LINEAR, ONCEFORWARD);
+
+        target = 45;
+        pitch_pos.go(45);
+        pitch_pos.go(0, 290, LINEAR, ONCEFORWARD);
+    }
+
+    if (gim_pitch_deg != target) {
+        for (int i = 0; i < 34; i++) {
+    
+            gim_pitch_servo.write(pitch_pos.update());
+            delay(10);
+        }
+    }
+
+    gim_pitch_deg = target;
+
+//    gim_yaw_servo.write(GIM_YAW_STOP_SIG);
+}
+
 #define RESET 0
 #define DEMO 1
+#define BATTERY_MEASURE 1
+
 int desired_z = DEFAULT_Z; // 90 degree between joints
 int desired_x = 0;
 int desired_y = 0;
@@ -209,13 +257,15 @@ float desired_yaw = 0;
 //int gimble_pitch = 2460;
 
 unsigned long currentMillis;
-unsigned long previousMillis;
+unsigned long previousMillis = 0;
+unsigned long prev_batt_millis = 0;
 bool toggle_walk = false;
 bool incr = true;
 
 
 rampInt test_ramp;
 int test_mode = -1;
+
 
 void setup() {
 
@@ -236,7 +286,13 @@ void setup() {
     leg_bl.knee.attach(BL_KNEE_PIN, MIN_SIG, MAX_SIG);
 
     gim_pitch_servo.attach(GIM_PIT_PIN, GIM_PIT_MIN, GIM_PIT_MAX);
-    gim_pitch_servo.write(180);
+    gim_pitch_servo.write(0);
+    gim_pitch_deg = 0;
+
+//    gim_yaw_servo.attach(GIM_YAW_PIN);
+//    gim_yaw_servo.write(GIM_YAW_STOP_SIG);
+
+    analogReadResolution(12);
     
     Serial.begin(115200);
     while(!Serial) {}
@@ -261,6 +317,7 @@ void setup() {
 }
 
 void loop() {
+    // Check if new commands
     numBytes = Serial.available();
     if(readline(Serial.read(), buffer, BUF_LENGTH) > 0) {
         #if !DEMO
@@ -291,12 +348,34 @@ void loop() {
         if (buffer[0] == 'x' || buffer[0] == 'y' || buffer[0] == 'z' || 
             buffer[0] == 'r' || buffer[0] == 'p' || buffer[0] == 'h' ||
             buffer[0] == 'w' || buffer[0] == 's' || buffer[0] == ' ' ||
-            buffer[0] == 'c' || buffer[0] == 'u') {
-            test_mode = buffer[0];
+            buffer[0] == 'c' || buffer[0] == 'u' || buffer[0] == 'g') {
 
-            char c = buffer[0];
-
-            Serial.println(c);
+            if (buffer[0] == 'g') {
+                int cmd = atoi(buffer + 1);
+                Serial.println(cmd);
+                
+                if (cmd == MOVE_CW_UP) {
+                    Serial.println("move_cw_up");
+                    gim_rotate(ROT_CW, MOV_UP);
+                }
+                else if(cmd == MOVE_CCW_UP) {
+                    Serial.println("move_cww_up");
+                    gim_rotate(ROT_CCW, MOV_UP);
+                }
+                else if(cmd == MOVE_CW_DOWN) {
+                    Serial.println("move_cw_down");
+                    gim_rotate(ROT_CW, MOV_DOWN);
+                }
+                else if(cmd == MOVE_CCW_DOWN) {
+                    Serial.println("move_ccw_down");
+                    gim_rotate(ROT_CCW, MOV_DOWN);
+                } 
+            }
+            else { // Update test mode and echo it
+                test_mode = buffer[0];
+    
+                Serial.println(buffer[0]);
+            }    
         }
 //        int val = atoi(buffer);
 //
@@ -310,8 +389,9 @@ void loop() {
         #endif // DEMO
     }
 
-#if DEMO
     currentMillis = millis();
+
+#if DEMO
     if (currentMillis - previousMillis >= 10) {  // start timed event
           
         previousMillis = currentMillis;
@@ -906,5 +986,13 @@ void loop() {
         }
     } // timed event
 #endif
-    
+
+#if BATTERY_MEASURE
+    if (currentMillis - prev_batt_millis >= BATTERY_MEASURE_PERIOD_MS) {
+        prev_batt_millis = currentMillis;
+        int val = analogRead(V_DIV_PIN);
+        double batt_voltage = (val) * VOLT_CONV_FACTOR;
+        Serial.println(batt_voltage, 2);
+    }
+#endif // BATTERY_MEASURE
 }

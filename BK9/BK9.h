@@ -31,3 +31,5 @@ typedef enum {
     MOV_DOWN,
     MOV_UP
 } mov_e;
+
+#define BATTERY_MEASURE_PERIOD_MS 10000
