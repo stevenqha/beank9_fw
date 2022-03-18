@@ -1,5 +1,7 @@
 #include <Servo.h>
 #include <Ramp.h>
+#include "BK9_Hardware.h"
+#include "Inverse_Kinematics.h"
 
 int initStart = 0;
 int state = 0;
@@ -73,356 +75,42 @@ int walkZPos6;
 int walkZPos7;
 int walkZPos8;
 
-Servo fr_hip;
-Servo fr_shoulder;
-Servo fr_knee;
 
-Servo fl_hip;
-Servo fl_shoulder;
-Servo fl_knee;
+leg_t leg_fr = {.leg = LEG_FR};
+leg_t leg_fl = {.leg = LEG_FL};
+leg_t leg_br = {.leg = LEG_BR};
+leg_t leg_bl = {.leg = LEG_BL}; 
 
-Servo br_hip;
-Servo br_shoulder;
-Servo br_knee;
 
-Servo bl_hip;
-Servo bl_shoulder;
-Servo bl_knee;
+//Servo &leg_fr.hip;
+//Servo &leg_fr.shoulder;
+//Servo &leg_fr.knee;
+//
+//Servo &leg_fl.hip;
+//Servo &leg_fl.shoulder;
+//Servo &leg_fl.knee;
+//
+//Servo &leg_br.hip;
+//Servo &leg_br.shoulder;
+//Servo &leg_br.knee;
+//
+//Servo &leg_bl.hip;
+//Servo &leg_bl.shoulder;
+//Servo &leg_bl.knee;
 
 Servo gimble_yaw;
 Servo gim_pitch_servo;
 
 
-#define FR_HIP_PIN 22
-#define FR_SHOULDER_PIN 23
-#define FR_KNEE_PIN 1
 
-#define FL_HIP_PIN 0
-#define FL_SHOULDER_PIN 8
-#define FL_KNEE_PIN 7
-
-#define BR_HIP_PIN 15
-#define BR_SHOULDER_PIN 14
-#define BR_KNEE_PIN 13
-
-#define BL_HIP_PIN 10
-#define BL_SHOULDER_PIN 11
-#define BL_KNEE_PIN 12
-
-#define GIMBLE_YAW_PIN 3
-#define gim_pitch_servo_PIN 2
-
-#define MIN_SIG 500
-#define MAX_SIG 2500
-#define GIM_PIT_MIN 635
-#define GIM_PIT_MAX 2460
 
 #define BUF_LENGTH 10
-
-#define SHIN_LENGTH 150 //mm
-#define THIGH_LENGTH 150 // mm
-#define HIP_OFFSET_FR 102.46f // mm
-#define HIP_OFFSET_FL 102.434f  // mm
-#define BODY_WIDTH 64.5f // mm
-#define BODY_LENGTH 255.0465f // mm
-
-
-#define GEAR_RATIO 3
-#define DEG_TO_US 7.407407f
-#define SERVO_SIG_OFFSET 500
-#define HIP_SIG_OFFSET 1500
-#define FR_HIP_SIG_OFFSET 1610
-#define FL_HIP_SIG_OFFSET 1400
-#define BR_HIP_SIG_OFFSET 1460
-#define BL_HIP_SIG_OFFSET 1630
-
 #define DEFAULT_Z 200 // mm (results in 90 degrees between thigh and shin)
 #define DEFAULT_Y_OFFSET 10 // mm
 
-typedef enum {
-    LEG_FR,
-    LEG_FL,
-    LEG_BR,
-    LEG_BL
-} leg_e;
-
-void kinematic(leg_e leg, float x, float y, float z, float roll, float pitch, float yaw) {
-    
-    // convert degrees to radians for the calcs
-    yaw = (PI/180) * yaw;
-
-    // put in offsets from robot's parameters so we can work out the radius of the foot from the robot's centre
-    if (leg == LEG_FL) {         // front left leg
-       y = y - (BODY_WIDTH+HIP_OFFSET_FR);
-       x = x - BODY_LENGTH;
-    }
-    else if (leg == LEG_FR) {    // front right leg
-       y = y + (BODY_WIDTH+HIP_OFFSET_FR);
-       x = x - BODY_LENGTH;
-    }
-    else if (leg == LEG_BL) {    // back left leg
-       y = y - (BODY_WIDTH+HIP_OFFSET_FR); 
-       x = x + BODY_LENGTH;
-    }
-    else if (leg == LEG_BR) {    // back right leg
-       y = y + (BODY_WIDTH+HIP_OFFSET_FR); 
-       x = x + BODY_LENGTH;
-    }
-
-    //calc existing angle of leg from cetre
-    float existingAngle = atan(y/x);
-
-    // calc radius from centre
-    float radius = y/sin(existingAngle);
-
-    //calc demand yaw angle
-    float demandYaw = existingAngle + yaw;
-
-    // calc new X and Y based on demand yaw angle
-    x = radius * cos(demandYaw);           // calc new X and Y based on new yaw angle
-    y = radius * sin(demandYaw);
-
-    // remove the offsets so we pivot around 0/0 x/y
-    if (leg == LEG_FL) {         // front left leg
-       y = y + (BODY_WIDTH+HIP_OFFSET_FR);
-       x = x + BODY_LENGTH;
-    }
-    else if (leg == LEG_FR) {    // front right leg
-       y = y - (BODY_WIDTH+HIP_OFFSET_FR);
-       x = x + BODY_LENGTH;
-    }
-    else if (leg == LEG_BL) {    // back left leg
-       y = y + (BODY_WIDTH+HIP_OFFSET_FR);
-       x = x - BODY_LENGTH;
-    }
-    else if (leg == LEG_BR) {    // back right leg
-       y = y - (BODY_WIDTH+HIP_OFFSET_FR);
-       x = x - BODY_LENGTH;
-    }
-
-    // ----------------------------------------------------------------------------------------------------------
-    // *** PITCH AXIS ***
-    // Positive pitch is front of robot tilting counter clockwise
-    pitch = (PI/180) * pitch;   // convert pitch to radians
-    
-    if (leg == LEG_BR || leg == LEG_BL) {
-        x *= -1;      // switch over x for each end of the robot
-        pitch *= -1;  // invert pitch for the end of the robot
-    }
-    
-    //calc top triangle sides
-    float legDiffPitch = sin(pitch) * BODY_LENGTH;
-    float bodyDiffPitch = cos(pitch) * BODY_LENGTH;
-
-    // calc actual height from the ground for each side
-    legDiffPitch = z + legDiffPitch;
-
-    // calc foot displacement
-    float footDisplacementPitch = (BODY_LENGTH - bodyDiffPitch) - x;
-
-    //calc smaller displacement angle
-    float footDisplacementAnglePitch = atan2(footDisplacementPitch, legDiffPitch);
-
-    // calc distance from the ground at the displacement angle (the hypotenuse of the final triangle)
-    float leg_length = legDiffPitch/cos(footDisplacementAnglePitch);
-
-    // calc the whole angle for the leg
-    float footWholeAnglePitch = footDisplacementAnglePitch - pitch;
-
-    //calc actual leg length - the new Z to pass on
-    z = cos(footWholeAnglePitch) * leg_length;
-
-    //calc new Z to pass on
-    x = sin(footWholeAnglePitch) * leg_length * -1;
-
-//    Serial.print("Pitch z: ");
-//    Serial.println(z);
-//    Serial.print("Pitch x: ");
-//    Serial.println(x);
-    // ---------------------------------------------------------------------------------------------------------
-
-    // *** NEW ROLL ***
-    // Positive is CCW from the front of the robot
-    
-    // Adjust y and roll depending on the leg
-    if (leg == LEG_FL || leg == LEG_BL) {
-        y *= -1; // Moving the leg in negative y results in positive y for robot
-    }
-    else if (leg == LEG_FR || leg == LEG_BR) {
-        roll *= -1; 
-    }
-
-    roll = (PI/180) * roll;       // convert roll angle to radians
-
-    // calc the top triangle sides
-    float legDiffRoll = sin(roll) * BODY_WIDTH;
-    float bodyDiffRoll = cos(roll) * BODY_WIDTH;
-
-    // calc actual height from the ground for each side
-    legDiffRoll = z + legDiffRoll;
-
-    // calc foot displacement
-    float footDisplacementRoll = (BODY_WIDTH - bodyDiffRoll) + HIP_OFFSET_FR + y;
-
-    //calc smaller displacement angle
-    float footDisplacementAngleRoll = atan2(footDisplacementRoll, legDiffRoll);
-
-    //calc distance from the ground at the displacement angle (the hypotenuse of the final triangle)
-    float zz1a = legDiffRoll/cos(footDisplacementAngleRoll);
-
-    // calc the whole angle for the leg
-    float footWholeAngleRoll = footDisplacementAngleRoll - roll;
-
-    //calc actual leg length - the new Z to pass on
-    z = cos(footWholeAngleRoll) * zz1a;
-
-    //calc new Y to pass on
-    y = sin(footWholeAngleRoll) * zz1a - HIP_OFFSET_FR;
-
-    Serial.print("Roll z: ");
-    Serial.println(z);
-    Serial.print("Roll y: ");
-    Serial.println(y);
-
-    // *** TRANSLATION AXES ***
-    // Y TRANSLATION (Side to side)
-    // calculate the hip joint and new leg length based on how far the robot moves sideways
-
-//    if (leg == LEG_FR || leg == LEG_BR) {
-//        y *= -1;
-//    }
-    
-    float length_y = y + HIP_OFFSET_FR;                  // calc sideways distance of foot from pivot point centre
-    float hipAngle1a = atan(length_y/z);             // first angle (that is there at rest due to the offset)
-    float hipHyp = length_y / (sin(hipAngle1a));       // hypotenuse from joint pivot to foot
-
-    // second triangle
-    float hipAngle1b = asin(HIP_OFFSET_FR/hipHyp) ;     // calc 'the other angle' in the triangle
-    float hipAngle1 = (PI - (PI/2) - hipAngle1b) + hipAngle1a;     // calc total hip angle
-    hipAngle1 = hipAngle1 - 1.570796;           // take away offset for rest position, hip is already at 90 degrees
-    float hipAngle1Degrees = ((hipAngle1 * (180/PI)));   // convert to degrees and take off rest position
-    
-    // calc new leg length to give to the code  below
-    z = HIP_OFFSET_FR / tan(hipAngle1b);           // new leg length
-
-//    Serial.print("New z1 : ");
-//    Serial.print(z);
-//    Serial.print(" hip ang : ");
-//    Serial.println(hipAngle1Degrees, 5);
 
 
-    // X TRANSLATION (Forward/backward)
-    // Invert command for back legs
-//    if (leg == LEG_BR || leg == LEG_BL) {
-//        x = -1 * x;    
-//    }
-    
-    // Calculate shoulder angle and new z based on desired x
-    float shoulder_ang2 = atan(x / z);
-    z = z / cos(shoulder_ang2);
-    shoulder_ang2 *= (180 / PI); // rad to degrees
-//    Serial.print("New z2 : ");
-//    Serial.print(z);
-//    Serial.print(" ang2 : ");
-//    Serial.println(shoulder_ang2, 5);
 
-    // Z TRANSLATION (Up and down)
-    // Calculate shoulder and knee angle based on desired height
-    float num = (THIGH_LENGTH * THIGH_LENGTH) + (z*z) - (SHIN_LENGTH * SHIN_LENGTH);
-    float den = 2 * THIGH_LENGTH * z;
-    float quo = num / den;
-    float shoulder_ang = acos(quo);
-    float knee_ang = PI - (shoulder_ang*2);
-
-    // Convert rad to degrees
-    shoulder_ang = shoulder_ang * (180/PI);
-    knee_ang = knee_ang * (180/PI);
-    
-//    Serial.print(shoulder_ang, 5);
-//    Serial.print(", ");
-//    Serial.println(knee_ang, 5);
-
-//    Serial.print("total shoulder ang : ");
-//    Serial.println(shoulder_ang2 + shoulder_ang, 5);
-
-    int shoulder_sig, knee_sig, hip_sig;
-    // Convert joint angle to servo angle based on gear ratio
-    shoulder_ang = (shoulder_ang + shoulder_ang2) * GEAR_RATIO;
-    knee_ang = (135 - knee_ang) * GEAR_RATIO;
-    hipAngle1Degrees = hipAngle1Degrees * GEAR_RATIO;
-
-    // Front Right Leg
-    if (leg == LEG_FR) { 
-        // Convert to microseconds for servo
-        shoulder_sig = MIN_SIG + shoulder_ang * DEG_TO_US;
-        shoulder_sig = constrain(shoulder_sig, MIN_SIG, MAX_SIG);
-        
-        knee_sig = MIN_SIG + knee_ang * DEG_TO_US;
-        knee_sig = constrain(knee_sig, MIN_SIG, MAX_SIG);
-    
-        hip_sig = FR_HIP_SIG_OFFSET + hipAngle1Degrees * DEG_TO_US;
-//        hip_sig = HIP_SIG_OFFSET - hipAngle1Degrees * DEG_TO_US;
-        hip_sig = constrain(hip_sig, MIN_SIG, MAX_SIG);
-
-        fr_shoulder.writeMicroseconds(shoulder_sig);
-        fr_knee.writeMicroseconds(knee_sig);
-        fr_hip.writeMicroseconds(hip_sig);
-    }
-    else if (leg == LEG_FL) {
-        // Convert to microseconds for servo
-        shoulder_sig = MAX_SIG - shoulder_ang * DEG_TO_US;
-        shoulder_sig = constrain(shoulder_sig, MIN_SIG, MAX_SIG);
-        
-        knee_sig = MAX_SIG - knee_ang * DEG_TO_US;
-        knee_sig = constrain(knee_sig, MIN_SIG, MAX_SIG);
-    
-//        hip_sig = HIP_SIG_OFFSET + hipAngle1Degrees * DEG_TO_US;
-        hip_sig = FL_HIP_SIG_OFFSET - hipAngle1Degrees * DEG_TO_US;
-        hip_sig = constrain(hip_sig, MIN_SIG, MAX_SIG);
-
-        fl_shoulder.writeMicroseconds(shoulder_sig);
-        fl_knee.writeMicroseconds(knee_sig);
-        fl_hip.writeMicroseconds(hip_sig);
-    }
-    else if (leg == LEG_BR) {
-        // Convert to microseconds for servo
-        shoulder_sig = MAX_SIG - shoulder_ang * DEG_TO_US;
-        shoulder_sig = constrain(shoulder_sig, MIN_SIG, MAX_SIG);
-        
-        knee_sig = MAX_SIG - knee_ang * DEG_TO_US;
-        knee_sig = constrain(knee_sig, MIN_SIG, MAX_SIG);
-    
-        hip_sig = BR_HIP_SIG_OFFSET - hipAngle1Degrees * DEG_TO_US;
-//        hip_sig = HIP_SIG_OFFSET + hipAngle1Degrees * DEG_TO_US;
-        hip_sig = constrain(hip_sig, MIN_SIG, MAX_SIG);
-
-        br_shoulder.writeMicroseconds(shoulder_sig);
-        br_knee.writeMicroseconds(knee_sig);
-        br_hip.writeMicroseconds(hip_sig);
-    }
-    else { // LEG_BL
-        // Convert to microseconds for servo
-        shoulder_sig = MIN_SIG + shoulder_ang * DEG_TO_US;
-        shoulder_sig = constrain(shoulder_sig, MIN_SIG, MAX_SIG);
-        
-        knee_sig = MIN_SIG + knee_ang * DEG_TO_US;
-        knee_sig = constrain(knee_sig, MIN_SIG, MAX_SIG);
-    
-//        hip_sig = HIP_SIG_OFFSET - hipAngle1Degrees * DEG_TO_US;
-        hip_sig = BL_HIP_SIG_OFFSET + hipAngle1Degrees * DEG_TO_US;
-        hip_sig = constrain(hip_sig, MIN_SIG, MAX_SIG);
-
-        bl_shoulder.writeMicroseconds(shoulder_sig);
-        bl_knee.writeMicroseconds(knee_sig);
-        bl_hip.writeMicroseconds(hip_sig);
-    }
-    
-//    Serial.print(shoulder_sig);
-//    Serial.print(", ");
-//    Serial.print(knee_sig);
-//    Serial.print(", ");
-//    Serial.println(hip_sig);
-}
 
 char buffer[BUF_LENGTH];
 int numBytes = 0;
@@ -450,67 +138,35 @@ int readline(int readch, char *buffer, int len) {
     return 0;
 }
 
-struct angles {
-  double tetta;
-  double alpha;
-  double gamma;
-};
-
-struct angles legFR(double x4, double y4, double z4) {
-#define L1 HIP_OFFSET_FR
-#define L2 THIGH_LENGTH
-#define L3 SHIN_LENGTH
-#define MAX_GAMMA 50
-
-  struct angles ang;
-  double D;
-
-  D = (sq(x4) + sq(-y4) - sq(L1) + sq(z4) - sq(L2) - sq(L3)) / (2 * L2 * L3);
-  //  if (D >= 1){D=1;}
-  //  else if (D <= 0){D=0;}
-  /////////////////////////////////////////////DOMINIO
-  ang.tetta = -atan2(y4, x4) - atan2(sqrt(sq(x4) + sq(-y4) - sq(L1)), -L1);
-  ang.gamma = atan2(sqrt(1 - sq(D)), D);
-  ang.alpha = atan2(z4, sqrt(sq(x4) + sq(-y4) - sq(L1))) - atan2(L3 * sin(ang.gamma), L2 + L3 * cos(ang.gamma));
-  ang.tetta = ang.tetta * 360 / (2 * PI) + 270;
-  ang.alpha = -ang.alpha * 360 / (2 * PI);
-  ang.gamma = ang.gamma * 360 / (2 * PI) - 90;
-
-  //  Serial.print("\t");Serial.print(ang.tetta);Serial.print(" - ");Serial.print(ang.alpha);Serial.print(" - ");Serial.println(ang.gamma);
-  if (ang.gamma >= MAX_GAMMA) {
-    ang.gamma = MAX_GAMMA;
-  }
-  return ang;
-}
 
 void reset_servos() {
-    fr_hip.writeMicroseconds(1500);
-    fr_shoulder.writeMicroseconds(2500);
-    fr_knee.writeMicroseconds(1500);
+    leg_fr.hip.writeMicroseconds(1500);
+    leg_fr.shoulder.writeMicroseconds(2500);
+    leg_fr.knee.writeMicroseconds(1500);
 
-    fl_hip.writeMicroseconds(1500);
-    fl_shoulder.writeMicroseconds(500);
-    fl_knee.writeMicroseconds(1500);
+    leg_fl.hip.writeMicroseconds(1500);
+    leg_fl.shoulder.writeMicroseconds(500);
+    leg_fl.knee.writeMicroseconds(1500);
 
-    br_hip.writeMicroseconds(1500);
-    br_shoulder.writeMicroseconds(500);
-    br_knee.writeMicroseconds(1500);
+    leg_br.hip.writeMicroseconds(1500);
+    leg_br.shoulder.writeMicroseconds(500);
+    leg_br.knee.writeMicroseconds(1500);
 
-    bl_hip.writeMicroseconds(1500);
-    bl_shoulder.writeMicroseconds(2500);
-    bl_knee.writeMicroseconds(1500);
+    leg_bl.hip.writeMicroseconds(1500);
+    leg_bl.shoulder.writeMicroseconds(2500);
+    leg_bl.knee.writeMicroseconds(1500);
 }
 
 void rest_position() {
-//    kinematic(LEG_FR, -43.5, -DEFAULT_Y_OFFSET, 115, 0, 0, 0);
-//    kinematic(LEG_FL, -43.5, DEFAULT_Y_OFFSET, 115, 0, 0, 0);
-//    kinematic(LEG_BR, 43.5, -DEFAULT_Y_OFFSET, 115, 0, 0, 0);
-//    kinematic(LEG_BL, 43.5, DEFAULT_Y_OFFSET, 115, 0, 0, 0);
+//    inv_kin(&leg_fr, -43.5, -DEFAULT_Y_OFFSET, 115, 0, 0, 0);
+//    inv_kin(&leg_fl, -43.5, DEFAULT_Y_OFFSET, 115, 0, 0, 0);
+//    inv_kin(&leg_br, 43.5, -DEFAULT_Y_OFFSET, 115, 0, 0, 0);
+//    inv_kin(&leg_bl, 43.5, DEFAULT_Y_OFFSET, 115, 0, 0, 0);
 
-    kinematic(LEG_FR, -43.5, 0, 115, 0, 0, 0);
-    kinematic(LEG_FL, -43.5, 0, 115, 0, 0, 0);
-    kinematic(LEG_BR, 43.5, 0, 115, 0, 0, 0);
-    kinematic(LEG_BL, 43.5, 0, 115, 0, 0, 0);
+    inv_kin(&leg_fr, -43.5, 0, 115, 0, 0, 0);
+    inv_kin(&leg_fl, -43.5, 0, 115, 0, 0, 0);
+    inv_kin(&leg_br, 43.5, 0, 115, 0, 0, 0);
+    inv_kin(&leg_bl, 43.5, 0, 115, 0, 0, 0);
     
     delay(1000);
 }
@@ -532,20 +188,17 @@ void stand() {
         z_val = z_ramp.update();
         x_val = x_ramp.update();
         
-        kinematic(LEG_FR, -x_val, -DEFAULT_Y_OFFSET, z_val, 0, 0, 0);
-        kinematic(LEG_FL, -x_val, DEFAULT_Y_OFFSET, z_val, 0, 0, 0);
-        kinematic(LEG_BR, x_val, -DEFAULT_Y_OFFSET, z_val, 0, 0, 0);
-        kinematic(LEG_BL, x_val, DEFAULT_Y_OFFSET, z_val, 0, 0, 0);
+        inv_kin(&leg_fr, -x_val, DEFAULT_Y_OFFSET, z_val, 0, 0, 0);
+        inv_kin(&leg_fl, -x_val, -DEFAULT_Y_OFFSET, z_val, 0, 0, 0);
+        inv_kin(&leg_br, x_val, DEFAULT_Y_OFFSET, z_val, 0, 0, 0);
+        inv_kin(&leg_bl, x_val, -DEFAULT_Y_OFFSET, z_val, 0, 0, 0);
         
         delay(10);
     }
 }
 
 #define RESET 0
-#define Z_TEST 0
-#define X_TEST 0
-#define Y_TEST 0
-#define STABLE_WALK 1
+#define DEMO 1
 int desired_z = DEFAULT_Z; // 90 degree between joints
 int desired_x = 0;
 int desired_y = 0;
@@ -565,23 +218,25 @@ rampInt test_ramp;
 int test_mode = -1;
 
 void setup() {
-    fr_hip.attach(FR_HIP_PIN, MIN_SIG, MAX_SIG);
-    fr_shoulder.attach(FR_SHOULDER_PIN, MIN_SIG, MAX_SIG);
-    fr_knee.attach(FR_KNEE_PIN, MIN_SIG, MAX_SIG);
 
-    fl_hip.attach(FL_HIP_PIN, MIN_SIG, MAX_SIG);
-    fl_shoulder.attach(FL_SHOULDER_PIN, MIN_SIG, MAX_SIG);
-    fl_knee.attach(FL_KNEE_PIN, MIN_SIG, MAX_SIG);
+    leg_fr.hip.attach(FR_HIP_PIN, MIN_SIG, MAX_SIG);
+    leg_fr.shoulder.attach(FR_SHOULDER_PIN, MIN_SIG, MAX_SIG);
+    leg_fr.knee.attach(FR_KNEE_PIN, MIN_SIG, MAX_SIG);
 
-    br_hip.attach(BR_HIP_PIN, MIN_SIG, MAX_SIG);
-    br_shoulder.attach(BR_SHOULDER_PIN, MIN_SIG, MAX_SIG);
-    br_knee.attach(BR_KNEE_PIN, MIN_SIG, MAX_SIG);
+    leg_fl.hip.attach(FL_HIP_PIN, MIN_SIG, MAX_SIG);
+    leg_fl.shoulder.attach(FL_SHOULDER_PIN, MIN_SIG, MAX_SIG);
+    leg_fl.knee.attach(FL_KNEE_PIN, MIN_SIG, MAX_SIG);
 
-    bl_hip.attach(BL_HIP_PIN, MIN_SIG, MAX_SIG);
-    bl_shoulder.attach(BL_SHOULDER_PIN, MIN_SIG, MAX_SIG);
-    bl_knee.attach(BL_KNEE_PIN, MIN_SIG, MAX_SIG);
+    leg_br.hip.attach(BR_HIP_PIN, MIN_SIG, MAX_SIG);
+    leg_br.shoulder.attach(BR_SHOULDER_PIN, MIN_SIG, MAX_SIG);
+    leg_br.knee.attach(BR_KNEE_PIN, MIN_SIG, MAX_SIG);
 
-//    gim_pitch_servo.attach(gim_pitch_servo_PIN, GIM_PIT_MIN, GIM_PIT_MAX);
+    leg_bl.hip.attach(BL_HIP_PIN, MIN_SIG, MAX_SIG);
+    leg_bl.shoulder.attach(BL_SHOULDER_PIN, MIN_SIG, MAX_SIG);
+    leg_bl.knee.attach(BL_KNEE_PIN, MIN_SIG, MAX_SIG);
+
+    gim_pitch_servo.attach(GIM_PIT_PIN, GIM_PIT_MIN, GIM_PIT_MAX);
+    gim_pitch_servo.write(180);
     
     Serial.begin(115200);
     while(!Serial) {}
@@ -599,25 +254,7 @@ void setup() {
 //    }
     
     stand();
-//    elapsedMicros time_e = 0;
-//    kinematic(LEG_FR, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
-//    Serial.println(time_e);
-//
-//    time_e = 0;
-//    kinematic(LEG_FL, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
-//    Serial.println(time_e);
-//
-//    time_e = 0;
-//    kinematic(LEG_BR, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
-//    Serial.println(time_e);
-//
-//    time_e = 0;
-//    kinematic(LEG_BL, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
-//    Serial.println(time_e);
-//
-//    time_e = 0;
-//    struct angles a = legFR(10, 10, 10);
-//    Serial.println(time_e);
+
     #endif // RESET
     
     delay(1000);
@@ -626,7 +263,7 @@ void setup() {
 void loop() {
     numBytes = Serial.available();
     if(readline(Serial.read(), buffer, BUF_LENGTH) > 0) {
-        #if !STABLE_WALK
+        #if !DEMO
 //        desired_z = atoi(buffer);
 //        Serial.println(desired_z);
 //        desired_x = atoi(buffer);
@@ -643,10 +280,10 @@ void loop() {
 //        gimble_pitch = atoi(buffer);
 //        Serial.println(gimble_pitch);
 
-        kinematic(LEG_FR, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
-        kinematic(LEG_FL, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
-        kinematic(LEG_BR, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
-        kinematic(LEG_BL, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
+        inv_kin(&leg_fr, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
+        inv_kin(&leg_fl, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
+        inv_kin(&leg_br, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
+        inv_kin(&leg_bl, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
 
 //        gim_pitch_servo.writeMicroseconds(gimble_pitch);
 
@@ -654,7 +291,7 @@ void loop() {
         if (buffer[0] == 'x' || buffer[0] == 'y' || buffer[0] == 'z' || 
             buffer[0] == 'r' || buffer[0] == 'p' || buffer[0] == 'h' ||
             buffer[0] == 'w' || buffer[0] == 's' || buffer[0] == ' ' ||
-            buffer[0] == 'c') {
+            buffer[0] == 'c' || buffer[0] == 'u') {
             test_mode = buffer[0];
 
             char c = buffer[0];
@@ -670,74 +307,10 @@ void loop() {
 //        else {
 //            toggle_walk = val;
 //        }
-        #endif // STABLE_WALK
+        #endif // DEMO
     }
 
-#if Z_TEST // Z-TEST
-    for (int i = 200; i >= 114; --i) {
-        desired_z--;
-        kinematic(LEG_FR, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
-        kinematic(LEG_FL, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
-        kinematic(LEG_BR, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
-        kinematic(LEG_BL, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
-        delay(20);    
-    }
-
-    for (int i = 114; i <= 200; ++i) {
-        desired_z++;
-        kinematic(LEG_FR, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
-        kinematic(LEG_FL, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
-        kinematic(LEG_BR, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
-        kinematic(LEG_BL, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
-        delay(20);    
-    }
-#elif X_TEST || Y_TEST
-
-    // 0 - 50
-    for (int i = 0; i <= 50; ++i) {
-        #if X_TEST
-        desired_x++;
-        #elif Y_TEST
-        desired_y++;
-        #endif
-        
-        kinematic(LEG_FR, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
-        kinematic(LEG_FL, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
-        kinematic(LEG_BR, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
-        kinematic(LEG_BL, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
-        delay(45);    
-    }
-
-    // 50 to -50
-    for (int i = 0; i <= 100; ++i) {
-        #if X_TEST
-        desired_x--;
-        #elif Y_TEST
-        desired_y--;
-        #endif
-        
-        kinematic(LEG_FR, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
-        kinematic(LEG_FL, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
-        kinematic(LEG_BR, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
-        kinematic(LEG_BL, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
-        delay(45);    
-    }
-
-    // -50 - 0
-    for (int i = 0; i <= 50; ++i) {
-        #if X_TEST
-        desired_x++;
-        #elif Y_TEST
-        desired_y++;
-        #endif
-        
-        kinematic(LEG_FR, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
-        kinematic(LEG_FL, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
-        kinematic(LEG_BR, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
-        kinematic(LEG_BL, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
-        delay(45);    
-    }
-#elif STABLE_WALK
+#if DEMO
     currentMillis = millis();
     if (currentMillis - previousMillis >= 10) {  // start timed event
           
@@ -807,10 +380,10 @@ void loop() {
                 }
             }
 
-            kinematic(LEG_FR, desired_x, -DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
-            kinematic(LEG_FL, desired_x, DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
-            kinematic(LEG_BR, desired_x, -DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
-            kinematic(LEG_BL, desired_x, DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
+            inv_kin(&leg_fr, desired_x, DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
+            inv_kin(&leg_fl, desired_x, -DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
+            inv_kin(&leg_br, desired_x, DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
+            inv_kin(&leg_bl, desired_x, -DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
 
             delay(35);
         }
@@ -830,10 +403,10 @@ void loop() {
                 }
             }
 
-            kinematic(LEG_FR, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
-            kinematic(LEG_FL, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
-            kinematic(LEG_BR, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
-            kinematic(LEG_BL, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
+            inv_kin(&leg_fr, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
+            inv_kin(&leg_fl, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
+            inv_kin(&leg_br, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
+            inv_kin(&leg_bl, desired_x, desired_y, desired_z, desired_roll, desired_pitch, desired_yaw);
 
             delay(35);
         }
@@ -853,10 +426,10 @@ void loop() {
                 }
             }
 
-            kinematic(LEG_FR, desired_x, -DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
-            kinematic(LEG_FL, desired_x, DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
-            kinematic(LEG_BR, desired_x, -DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
-            kinematic(LEG_BL, desired_x, DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
+            inv_kin(&leg_fr, desired_x, DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
+            inv_kin(&leg_fl, desired_x, -DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
+            inv_kin(&leg_br, desired_x, DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
+            inv_kin(&leg_bl, desired_x, -DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
 
             delay(35);
         }
@@ -876,10 +449,10 @@ void loop() {
                 }
             }
 
-            kinematic(LEG_FR, desired_x, -DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
-            kinematic(LEG_FL, desired_x, DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
-            kinematic(LEG_BR, desired_x, -DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
-            kinematic(LEG_BL, desired_x, DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
+            inv_kin(&leg_fr, desired_x, DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
+            inv_kin(&leg_fl, desired_x, -DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
+            inv_kin(&leg_br, desired_x, DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
+            inv_kin(&leg_bl, desired_x, -DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
 
             delay(35);
         }
@@ -899,10 +472,10 @@ void loop() {
                 }
             }
 
-            kinematic(LEG_FR, desired_x, -DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
-            kinematic(LEG_FL, desired_x, DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
-            kinematic(LEG_BR, desired_x, -DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
-            kinematic(LEG_BL, desired_x, DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
+            inv_kin(&leg_fr, desired_x, DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
+            inv_kin(&leg_fl, desired_x, -DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
+            inv_kin(&leg_br, desired_x, DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
+            inv_kin(&leg_bl, desired_x, -DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
 
             delay(35);
         }
@@ -922,10 +495,10 @@ void loop() {
                 }
             }
 
-            kinematic(LEG_FR, desired_x, -DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
-            kinematic(LEG_FL, desired_x, DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
-            kinematic(LEG_BR, desired_x, -DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
-            kinematic(LEG_BL, desired_x, DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
+            inv_kin(&leg_fr, desired_x, DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
+            inv_kin(&leg_fl, desired_x, -DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
+            inv_kin(&leg_br, desired_x, DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
+            inv_kin(&leg_bl, desired_x, -DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
 
             delay(35);
         }
@@ -983,7 +556,7 @@ void loop() {
                     }
                 }
             
-                else if (state == 1) {  // LEG_BL Lifting
+                else if (state == 1) {  // &leg_bl Lifting
     //                desired_pitch = -1.5; 
     //                desired_roll = 1.5;
                     
@@ -1295,10 +868,10 @@ void loop() {
             
     //        desired_pitch = 0; //-1.5;    // bodge to keep the nose up
             
-            kinematic(LEG_FR, currentLeg1x+offsetX, currentLeg1y-offsetY, currentLeg1z, desired_roll, desired_pitch, desired_yaw);
-            kinematic(LEG_FL, currentLeg2x+offsetX, currentLeg1y+offsetY, currentLeg2z, desired_roll, desired_pitch, desired_yaw);
-            kinematic(LEG_BR, currentLeg3x+offsetX, currentLeg1y-offsetY, currentLeg3z, desired_roll, desired_pitch, desired_yaw);
-            kinematic(LEG_BL, currentLeg4x+offsetX, currentLeg1y+offsetY, currentLeg4z, desired_roll, desired_pitch, desired_yaw);
+            inv_kin(&leg_fr, currentLeg1x+offsetX, currentLeg1y+offsetY, currentLeg1z, desired_roll, desired_pitch, desired_yaw);
+            inv_kin(&leg_fl, currentLeg2x+offsetX, currentLeg1y-offsetY, currentLeg2z, desired_roll, desired_pitch, desired_yaw);
+            inv_kin(&leg_br, currentLeg3x+offsetX, currentLeg1y+offsetY, currentLeg3z, desired_roll, desired_pitch, desired_yaw);
+            inv_kin(&leg_bl, currentLeg4x+offsetX, currentLeg1y-offsetY, currentLeg4z, desired_roll, desired_pitch, desired_yaw);
         }
         else if (test_mode == 's') {
             desired_x = 0;
@@ -1308,10 +881,10 @@ void loop() {
             desired_pitch = 0;
             desired_yaw = 0; 
             
-            kinematic(LEG_FR, 0, -DEFAULT_Y_OFFSET, DEFAULT_Z, 0, 0, 0);
-            kinematic(LEG_FL, 0, DEFAULT_Y_OFFSET, DEFAULT_Z, 0, 0, 0);
-            kinematic(LEG_BR, 0, -DEFAULT_Y_OFFSET, DEFAULT_Z, 0, 0, 0);
-            kinematic(LEG_BL, 0, DEFAULT_Y_OFFSET, DEFAULT_Z, 0, 0, 0);
+            inv_kin(&leg_fr, 0, DEFAULT_Y_OFFSET, DEFAULT_Z, 0, 0, 0);
+            inv_kin(&leg_fl, 0, -DEFAULT_Y_OFFSET, DEFAULT_Z, 0, 0, 0);
+            inv_kin(&leg_br, 0, DEFAULT_Y_OFFSET, DEFAULT_Z, 0, 0, 0);
+            inv_kin(&leg_bl, 0, -DEFAULT_Y_OFFSET, DEFAULT_Z, 0, 0, 0);
 
             incr = true;
         }
@@ -1319,13 +892,17 @@ void loop() {
             rest_position();
         }
         else if (test_mode == 'c') {
-            reset_servos();   
+            reset_servos();
+        }
+        else if (test_mode == 'u') {
+            stand();
+            test_mode = 's';
         }
         else {
-            kinematic(LEG_FR, desired_x, -DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
-            kinematic(LEG_FL, desired_x, DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
-            kinematic(LEG_BR, desired_x, -DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
-            kinematic(LEG_BL, desired_x, DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);    
+            inv_kin(&leg_fr, desired_x, DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
+            inv_kin(&leg_fl, desired_x, -DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
+            inv_kin(&leg_br, desired_x, DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
+            inv_kin(&leg_bl, desired_x, -DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);    
         }
     } // timed event
 #endif
