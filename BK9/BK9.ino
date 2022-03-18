@@ -79,24 +79,7 @@ int walkZPos8;
 leg_t leg_fr = {.leg = LEG_FR};
 leg_t leg_fl = {.leg = LEG_FL};
 leg_t leg_br = {.leg = LEG_BR};
-leg_t leg_bl = {.leg = LEG_BL}; 
-
-
-//Servo &leg_fr.hip;
-//Servo &leg_fr.shoulder;
-//Servo &leg_fr.knee;
-//
-//Servo &leg_fl.hip;
-//Servo &leg_fl.shoulder;
-//Servo &leg_fl.knee;
-//
-//Servo &leg_br.hip;
-//Servo &leg_br.shoulder;
-//Servo &leg_br.knee;
-//
-//Servo &leg_bl.hip;
-//Servo &leg_bl.shoulder;
-//Servo &leg_bl.knee;
+leg_t leg_bl = {.leg = LEG_BL};
 
 Servo gim_yaw_servo;
 Servo gim_pitch_servo;
@@ -217,7 +200,7 @@ void gim_rotate(bool clockwise, bool up) {
 //        pitch_pos.go(180);
 //        pitch_pos.go(135, 290, LINEAR, ONCEFORWARD);
 
-        target = 0;
+        target = 45;
         pitch_pos.go(0);
         pitch_pos.go(45, 290, LINEAR, ONCEFORWARD);
     }
@@ -225,7 +208,7 @@ void gim_rotate(bool clockwise, bool up) {
 //        pitch_pos.go(135);
 //        pitch_pos.go(180, 290, LINEAR, ONCEFORWARD);
 
-        target = 45;
+        target = 0;
         pitch_pos.go(45);
         pitch_pos.go(0, 290, LINEAR, ONCEFORWARD);
     }
@@ -253,8 +236,6 @@ int desired_y = 0;
 float desired_pitch = 0;
 float desired_roll = 0;
 float desired_yaw = 0;
-
-//int gimble_pitch = 2460;
 
 unsigned long currentMillis;
 unsigned long previousMillis = 0;
