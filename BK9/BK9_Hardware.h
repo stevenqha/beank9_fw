@@ -10,14 +10,14 @@
 #define FL_KNEE_PIN     7
 
 #define BR_HIP_PIN      15
-#define BR_SHOULDER_PIN 3 //14
+#define BR_SHOULDER_PIN 14
 #define BR_KNEE_PIN     13
 
 #define BL_HIP_PIN      10
 #define BL_SHOULDER_PIN 11
 #define BL_KNEE_PIN     12
 
-#define GIM_YAW_PIN     14 //3
+#define GIM_YAW_PIN     3
 #define GIM_PIT_PIN     2
 
 #define V_DIV_PIN 21

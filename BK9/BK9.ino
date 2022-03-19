@@ -329,7 +329,7 @@ void loop() {
         if (buffer[0] == 'x' || buffer[0] == 'y' || buffer[0] == 'z' || 
             buffer[0] == 'r' || buffer[0] == 'p' || buffer[0] == 'h' ||
             buffer[0] == 'w' || buffer[0] == 's' || buffer[0] == ' ' ||
-            buffer[0] == 'c' || buffer[0] == 'u' || buffer[0] == 'g') {
+            buffer[0] == 'c' || buffer[0] == 'u' || buffer[0] == 'g' || 't') {
 
             if (buffer[0] == 'g') {
                 int cmd = atoi(buffer + 1);
@@ -957,6 +957,25 @@ void loop() {
         }
         else if (test_mode == 'u') {
             stand();
+            test_mode = 's';
+        }
+        else if (test_mode == 't') {
+            desired_z = 200;
+            
+            inv_kin(&leg_fr, desired_x, DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
+            inv_kin(&leg_fl, desired_x, -DEFAULT_Y_OFFSET, 115, desired_roll, desired_pitch, desired_yaw);
+            inv_kin(&leg_br, desired_x, DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
+            inv_kin(&leg_bl, desired_x, -DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
+
+            delay(1000);
+
+            inv_kin(&leg_fr, desired_x, DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
+            inv_kin(&leg_fl, desired_x, -DEFAULT_Y_OFFSET, 200, desired_roll, desired_pitch, desired_yaw);
+            inv_kin(&leg_br, desired_x, DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
+            inv_kin(&leg_bl, desired_x, -DEFAULT_Y_OFFSET, desired_z, desired_roll, desired_pitch, desired_yaw);
+
+            delay(1000);
+
             test_mode = 's';
         }
         else {
